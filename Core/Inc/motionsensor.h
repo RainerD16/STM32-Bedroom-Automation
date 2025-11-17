@@ -5,6 +5,9 @@
  *      Author: Rainer
  */
 
+#ifndef INC_MOTIONSENSOR_H_
+#define INC_MOTIONSENSOR_H_
+
 #ifndef SRC_MOTIONSENSOR_H_
 #define SRC_MOTIONSENSOR_H_
 #include <stdio.h>
@@ -15,3 +18,6 @@ const char* displayMotion(void);
 
 
 #endif /* SRC_MOTIONSENSOR_H_ */
+
+
+#endif /* INC_MOTIONSENSOR_H_ */
