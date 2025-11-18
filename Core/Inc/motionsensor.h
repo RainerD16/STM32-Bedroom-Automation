@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+extern volatile uint8_t motion;
 int32_t readMotion(void);
 const char* displayMotion(void);
 

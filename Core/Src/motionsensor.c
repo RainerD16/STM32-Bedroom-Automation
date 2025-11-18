@@ -8,7 +8,7 @@
 #include "motionsensor.h"
 #include "stm32l4xx_hal.h"
 
-int32_t motion;
+volatile uint8_t motion;
 char msg1[] = "Motion Detected (1) \r\n";
 char msg2[] = "No Motion Detected (0) \r\n";
 

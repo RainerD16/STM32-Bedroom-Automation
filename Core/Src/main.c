@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "motionsensor.h"
@@ -59,9 +60,9 @@ static void MX_USART2_UART_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 state CURRENTSTATE = IDLE;
-device LIGHT = {"HB1750", IDLE, 0};
-device MOTION = {"HC-SR501", IDLE, 0};
-device TEMP = {"SHT31", IDLE, 0};
+device LIGHT = {"HB1750", 0};
+device MOTION = {"HC-SR501", 0};
+device TEMP = {"SHT31", 0};
 /* USER CODE END 0 */
 
 /**
@@ -103,26 +104,32 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
 	  switch (CURRENTSTATE){
 	  	  case(IDLE):
 	  			  if(/*ISR MOTION FLAG*/){
 	  				  //exit low power mode
-	  				  // CURRENTSTATE = READY
-	  			  }else{
-	  				  //stay in low power mode
-	  				  //CURRENTSTATE = IDLE
+	  				  CURRENTSTATE = READY;
 	  			  }
+	  	  //print idle state to screen
+	  	  break;
 	  	  case(READY):
 	  			// get all sensor data (use read functions)
-	  			// capture data into device object (.data)
-	  			// CURRENTSTATE = CONTROL
+				// capture data into device object (.data)
+	  			LIGHT.data = getLUX();
+	  	  	  	TEMP.data = 0;//temp function
+	  	  	  	//print data to screen
+	  			CURRENTSTATE = CONTROL;
+	  	  break;
 	  	  case(CONTROL):
 		  	  // change fan speed
 		  	  // change light intensity
-		  	  // CURRENTSTATE = READY
+			  //print data to screen
+		  	    CURRENTSTATE = READY;
+	  	  break;
 
 	  }
-    /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
 }
@@ -238,15 +245,15 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin : LD3_Pin */
-  GPIO_InitStruct.Pin = LD3_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  /*Configure GPIO pin : PB3 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LD3_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI3_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
