@@ -18,15 +18,17 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "motionsensor.h"
+#include "lightsensor.h"
+#include "device.h"
 
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum{ IDLE, READY, CONTROL } state;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -56,7 +58,10 @@ static void MX_USART2_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+state CURRENTSTATE = IDLE;
+device LIGHT = {"HB1750", IDLE, 0};
+device MOTION = {"HC-SR501", IDLE, 0};
+device TEMP = {"SHT31", IDLE, 0};
 /* USER CODE END 0 */
 
 /**
@@ -98,7 +103,25 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
+	  switch (CURRENTSTATE){
+	  	  case(IDLE):
+	  			  if(/*ISR MOTION FLAG*/){
+	  				  //exit low power mode
+	  				  // CURRENTSTATE = READY
+	  			  }else{
+	  				  //stay in low power mode
+	  				  //CURRENTSTATE = IDLE
+	  			  }
+	  	  case(READY):
+	  			// get all sensor data (use read functions)
+	  			// capture data into device object (.data)
+	  			// CURRENTSTATE = CONTROL
+	  	  case(CONTROL):
+		  	  // change fan speed
+		  	  // change light intensity
+		  	  // CURRENTSTATE = READY
 
+	  }
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
