@@ -34,7 +34,7 @@ typedef enum{ IDLE, READY, CONTROL } state;
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define INACTIVITY_TIMEOUT_MS 10000  // 10s
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -46,7 +46,7 @@ typedef enum{ IDLE, READY, CONTROL } state;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+volatile uint32_t lastMotionTime = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -63,6 +63,14 @@ state CURRENTSTATE = IDLE;
 device LIGHT = {"HB1750", 0};
 device MOTION = {"HC-SR501", 0};
 device TEMP = {"SHT31", 0};
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == GPIO_PIN_3) {
+        motionDetected = 1;
+        lastMotionTime = HAL_GetTick();
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -108,10 +116,15 @@ int main(void)
     /* USER CODE BEGIN 3 */
 	  switch (CURRENTSTATE){
 	  	  case(IDLE):
-	  			  if(/*ISR MOTION FLAG*/){
+	  			  if(motionDetected){
 	  				  //exit low power mode
+	  				  motionDetected = 0;
 	  				  CURRENTSTATE = READY;
+	  			      HAL_ResumeTick();
+	  				  break;
 	  			  }
+	  	  	  HAL_SuspendTick();
+	  	  	  HAL_PWREx_EnterSTOP2Mode(PWR_SLEEPENTRY_WFI);
 	  	  //print idle state to screen
 	  	  break;
 	  	  case(READY):
@@ -126,7 +139,11 @@ int main(void)
 		  	  // change fan speed
 		  	  // change light intensity
 			  //print data to screen
-		  	    CURRENTSTATE = READY;
+				if((HAL_GetTick() - lastMotionTime) > INACTIVITY_TIMEOUT_MS){
+					CURRENTSTATE = IDLE;
+				}else{
+					CURRENTSTATE = READY;
+				}
 	  	  break;
 
 	  }
