@@ -7,7 +7,10 @@
 #include "lightsensor.h"
 #include "stm32l4xx_hal.h"
 
-const addr = 0x46; // Device Address
+// Light sensor pins:
+// D1 = SCL
+// D2 = SDA
+const addr = 0x23; // Device Address
 uint8_t readData[2]; // two-byte data
 
 void bh1750_getData(){
