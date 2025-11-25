@@ -13,7 +13,7 @@ char msg1[] = "Motion Detected (1) \r\n";
 char msg2[] = "No Motion Detected (0) \r\n";
 
 int32_t readMotion(){
-	motionDetected = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5);
+	motionDetected = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6);
 	return motion;
 }
 
