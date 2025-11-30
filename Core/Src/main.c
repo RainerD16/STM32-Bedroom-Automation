@@ -24,7 +24,9 @@
 #include "motionsensor.h"
 #include "lightsensor.h"
 #include "device.h"
-
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,6 +56,8 @@ UART_HandleTypeDef huart2;
 volatile uint32_t lastMotionTime = 0;
 uint32_t ledDC;
 uint32_t fanDC;
+char buffer[100];
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -70,9 +74,9 @@ static void MX_I2C1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 state CURRENTSTATE = IDLE;
-device LIGHT = {"BH1750", 0};
-device MOTION = {"HC-SR501", 0};
-device TEMP = {"SHT31", 0};
+struct device LIGHT = {"BH1750", 0};
+struct device MOTION = {"HC-SR501", 0};
+struct device TEMP = {"SHT31", 0};
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
@@ -81,6 +85,17 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         lastMotionTime = HAL_GetTick();
     }
 }
+
+uint32_t map(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_min, uint32_t out_max){
+    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+uint32_t mapInverse(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_min, uint32_t out_max){
+    if(x <= in_min) return out_min;
+    if(x >= in_max) return out_max;
+    return (in_max - x) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -135,19 +150,26 @@ int main(void)
 	  			  if(motionDetected){
 	  				  //exit low power mode
 	  				  motionDetected = 0;
+	  				  HAL_UART_Transmit(&huart2, (uint8_t*)"Waking\r\n", 8, HAL_MAX_DELAY);   // 8 bytes including \r\n
 	  			      CURRENTSTATE = READY;
 	  				  break;
 	  			  }
+	  	  	  HAL_UART_Transmit(&huart2, (uint8_t*)"Sleeping\r\n", 10, HAL_MAX_DELAY); // 10 bytes
+
 	  	  	  HAL_SuspendTick();
-	  	  	  HAL_PWREx_EnterSTOP2Mode(PWR_SLEEPENTRY_WFI);
-	  	  	  SystemClock_Config();
+	  	      HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
 	  	  	  HAL_ResumeTick();
 	  	  //print idle state to screen
 	  	  break;
 	  	  case(READY):
 	  			// get all sensor data (use read functions)
 				// capture data into device object (.data)
-	  			LIGHT.data = getLUX();
+				bh1750_getData();
+	  			LIGHT.data = getLux();
+	  	  	  	snprintf(buffer, sizeof(buffer), "Lux: %u\r\n", LIGHT.data);
+	  			// send over UART
+	  			HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+
 	  	  	  	TEMP.data = 0;//temp function
 	  	  	  	//print data to screen
 	  			CURRENTSTATE = CONTROL;
@@ -158,10 +180,14 @@ int main(void)
 					lastMotionTime = HAL_GetTick();   // Refresh timeout
 				}
 		  	  // change fan speed (0 - 1280) (pin D9)
-	  	  	  	fanDC = map(TEMP.data, 20, 27, 0, 1279); //map function dynamically sets target based on two ranges
+	  	  	  	//fanDC = map(TEMP.data, 20, 27, 0, 1279); //map function dynamically sets target based on two ranges
 		  	  // change light intensity (0 - 1280)(pin A4)
-	  	  	  	lightDC = map(LIGHT.data, 0, 800, 0, 1279); //map function dynamically sets target based on two ranges
+	  	  	  	ledDC = mapInverse(LIGHT.data, 0, 800, 0, 1279); //map function dynamically sets target based on two ranges
+	  	  	  	__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ledDC);
+
 			  //print data to screen
+	  	  	  	HAL_UART_Transmit(&huart2, (uint8_t*)buffer, LIGHT.data, HAL_MAX_DELAY);
+
 			  //wait X-seconds
 				HAL_Delay(1000);  // 5 seconds
 				if((HAL_GetTick() - lastMotionTime) > INACTIVITY_TIMEOUT_MS){

@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 extern volatile uint8_t motionDetected;
 int32_t readMotion(void);
