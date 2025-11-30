@@ -1,0 +1,2 @@
+../Core/Src/motionsensor.c:15:9:readMotion	1
+../Core/Src/motionsensor.c:20:13:displayMotion	2

@@ -8,6 +8,7 @@
 #ifndef INC_DEVICE_H_
 #define INC_DEVICE_H_
 
+#include <stdint.h>
 /*
 enum state{
 	IDLE, ON, OFF
