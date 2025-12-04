@@ -27,6 +27,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "ssd1306.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -37,6 +38,9 @@ typedef enum{ IDLE, READY, CONTROL } state;
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define INACTIVITY_TIMEOUT_MS 10000  // 10s
+// SHT31 Address (Default 0x44, shifted left by 1 for HAL)
+#define SHT31_ADDR (0x44 << 1)
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -46,6 +50,7 @@ typedef enum{ IDLE, READY, CONTROL } state;
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
+I2C_HandleTypeDef hi2c3;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
@@ -67,6 +72,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_I2C3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -86,7 +92,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     }
 }
 
-uint32_t map(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_min, uint32_t out_max){
+float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
+    if(x <= in_min) return out_min;
+    if(x >= in_max) return out_max;
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
@@ -96,6 +104,38 @@ uint32_t mapInverse(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_m
     return (in_max - x) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
+typedef struct {
+    float temperature;
+    float humidity;
+} SHT31_Data;
+
+SHT31_Data SHT31_Read(I2C_HandleTypeDef *hi2c1) {
+    SHT31_Data result = {0.0f, 0.0f};
+    uint8_t cmd[2] = {0x2C, 0x06}; // Command: Measure High Repeatability, No Clock Stretch
+    uint8_t data[6];
+
+    // 1. Send Measurement Command
+    if (HAL_I2C_Master_Transmit(hi2c1, SHT31_ADDR, cmd, 2, 100) != HAL_OK) {
+        return result; // Error
+    }
+
+    // 2. Wait for measurement to complete (High repeatability takes ~15ms)
+    HAL_Delay(20);
+
+    // 3. Read 6 Bytes (Temp MSB, Temp LSB, CRC, Hum MSB, Hum LSB, CRC)
+    if (HAL_I2C_Master_Receive(hi2c1, SHT31_ADDR, data, 6, 100) == HAL_OK) {
+        // Convert Temperature
+        uint16_t temp_raw = (data[0] << 8) | data[1];
+        result.temperature = -45.0f + (175.0f * (float)temp_raw / 65535.0f);
+
+        // Convert Humidity
+        uint16_t hum_raw = (data[3] << 8) | data[4];
+        result.humidity = 100.0f * ((float)hum_raw / 65535.0f);
+    }
+    HAL_Delay(10);
+
+    return result;
+}
 /* USER CODE END 0 */
 
 /**
@@ -131,15 +171,36 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM2_Init();
   MX_I2C1_Init();
+  MX_I2C3_Init();
+
   /* USER CODE BEGIN 2 */
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+/*
+  // 1. HARDWARE RESET (Must Keep)
 
+      HAL_GPIO_WritePin(OLED_RST_GPIO_Port, OLED_RST_Pin, GPIO_PIN_RESET);
+      HAL_Delay(100);
+      HAL_GPIO_WritePin(OLED_RST_GPIO_Port, OLED_RST_Pin, GPIO_PIN_SET);
+      HAL_Delay(100);
+
+      // 2. INITIALIZE OLED (Must Keep)
+      ssd1306_Init();
+      ssd1306_Fill(Black);// Clear any startup garbage
+      ssd1306_UpdateScreen();
+      HAL_Delay(10);
+*/
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  char temp_str[32];
+  char hum_str[32];
+ // char motion_str[32];
+  char state_str[32];
+  char lux_str[32];
+
   while (1)
   {
     /* USER CODE END WHILE */
@@ -150,28 +211,83 @@ int main(void)
 	  			  if(motionDetected){
 	  				  //exit low power mode
 	  				  motionDetected = 0;
-	  				  HAL_UART_Transmit(&huart2, (uint8_t*)"Waking\r\n", 8, HAL_MAX_DELAY);   // 8 bytes including \r\n
+	  				  HAL_UART_Transmit(&huart2, (uint8_t*)"Motion detected, waking up MCU...\r\n",36, HAL_MAX_DELAY);
 	  			      CURRENTSTATE = READY;
 	  				  break;
 	  			  }
-	  	  	  HAL_UART_Transmit(&huart2, (uint8_t*)"Sleeping\r\n", 10, HAL_MAX_DELAY); // 10 bytes
-
+	  	  	  HAL_UART_Transmit(&huart2, (uint8_t*)"No Motion detected, MCU entering sleep mode...\r\n\n", 52, HAL_MAX_DELAY);
+/*
+	  	  	 snprintf(state_str, sizeof(state_str), "STATE: SLEEPING");
+	  	  	ssd1306_Fill(Black);
+	  	  	ssd1306_SetCursor(5, 10);
+	  	  	ssd1306_WriteString(state_str, Font_7x10, White);
+	  	  	ssd1306_UpdateScreen();
+	  	  	HAL_Delay(50);
+*/
 	  	  	  HAL_SuspendTick();
 	  	      HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
 	  	  	  HAL_ResumeTick();
-	  	  //print idle state to screen
+
 	  	  break;
 	  	  case(READY):
 	  			// get all sensor data (use read functions)
 				// capture data into device object (.data)
 				bh1750_getData();
 	  			LIGHT.data = getLux();
-	  	  	  	snprintf(buffer, sizeof(buffer), "Lux: %u\r\n", LIGHT.data);
-	  			// send over UART
+	  	  	  	snprintf(buffer, sizeof(buffer), "Lux: %ld\r\n", (long)LIGHT.data);
 	  			HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
 
 	  	  	  	TEMP.data = 0;//temp function
-	  	  	  	//print data to screen
+	  	  	  	SHT31_Data Temp_Data  = SHT31_Read(&hi2c1);
+	  	  	    HAL_Delay(1000);
+	  	  	    float temp_f = (Temp_Data.temperature * 1.8f) + 32.0f;
+	  	  	    snprintf(buffer, sizeof(buffer), "Temperature: %0.2f F\r\n", temp_f);
+	  	  		HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+	  	  		snprintf(buffer, sizeof(buffer), "Relative humidity: %0.2f%%\r\n", Temp_Data.humidity);
+	  	  		HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+
+	  	  		uint8_t fanPercentInt = (fanDC * 100) / 1279;
+	  	  		uint8_t ledPercentInt = (ledDC * 100) / 1279;
+	  	  		snprintf(buffer, sizeof(buffer), "Fan: %d%%, LED: %d%%\r\n\n", fanPercentInt, ledPercentInt);
+	  	  		HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+
+/*	  	  	  	//print data to screen
+	  	  	// 1. Read Sensor (Returns Celsius)
+
+	  	   // 2. Perform Conversion (C -> F)
+
+
+	  	   // 3. Format Strings with Units
+	  	   // current state
+	  	   snprintf(state_str, sizeof(buffer), "STATE: ACTIVE");
+	  	   //lux reading
+	  	  snprintf(lux_str, sizeof(buffer), "Lux: %ld", (long)LIGHT.data);
+
+
+	  	 // "Temp: 72.5 F"
+	  	 // snprintf(temp_str, sizeof(temp_str), "Temp: %.1f F", temp_f);
+
+	  	 // "Hum:  45.2 %"
+	  	 // snprintf(hum_str, sizeof(hum_str), "Hum:  %.1f %%", Temp_Data.humidity);
+
+	  	 // 4. Draw Frame
+	  	 ssd1306_Fill(Black);
+
+	  	 ssd1306_SetCursor(5, 10);
+	  	 ssd1306_WriteString(state_str, Font_7x10, White);
+
+	  	 ssd1306_SetCursor(5, 20);
+	  	ssd1306_WriteString(lux_str, Font_7x10, White);
+
+	  	ssd1306_SetCursor(5, 30);
+	  	ssd1306_WriteString(temp_str, Font_7x10, White);
+
+	    ssd1306_SetCursor(5, 40);
+	   ssd1306_WriteString(hum_str, Font_7x10, White);
+
+	  	// 5. Push to Screen
+	  	ssd1306_UpdateScreen();
+	  	*/
 	  			CURRENTSTATE = CONTROL;
 	  	  break;
 	  	  case(CONTROL):
@@ -180,16 +296,20 @@ int main(void)
 					lastMotionTime = HAL_GetTick();   // Refresh timeout
 				}
 		  	  // change fan speed (0 - 1280) (pin D9)
-	  	  	  	//fanDC = map(TEMP.data, 20, 27, 0, 1279); //map function dynamically sets target based on two ranges
+	  	  	  fanDC = (uint32_t)mapFloat(temp_f, 68.0f, 78.0f, 0.0f, 1279.0f);
+	  	  	  if(fanDC > 1279) fanDC = 1279; // clamp
+	  	  	  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, fanDC);
 		  	  // change light intensity (0 - 1280)(pin A4)
-	  	  	  	ledDC = mapInverse(LIGHT.data, 0, 800, 0, 1279); //map function dynamically sets target based on two ranges
+	  	  	  if (LIGHT.data >= 800) {
+	  	  		  ledDC = 0; // Turn LED off
+	  	  	  } else {
+	  	  	    ledDC = mapInverse(LIGHT.data, 0, 800, 0, 1279);
+	  	  	  }
 	  	  	  	__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ledDC);
 
-			  //print data to screen
-	  	  	  	HAL_UART_Transmit(&huart2, (uint8_t*)buffer, LIGHT.data, HAL_MAX_DELAY);
 
 			  //wait X-seconds
-				HAL_Delay(1000);  // 5 seconds
+				HAL_Delay(1000);  // 1 seconds
 				if((HAL_GetTick() - lastMotionTime) > INACTIVITY_TIMEOUT_MS){
 					CURRENTSTATE = IDLE;
 				}else{
@@ -307,6 +427,54 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief I2C3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C3_Init(void)
+{
+
+  /* USER CODE BEGIN I2C3_Init 0 */
+
+  /* USER CODE END I2C3_Init 0 */
+
+  /* USER CODE BEGIN I2C3_Init 1 */
+
+  /* USER CODE END I2C3_Init 1 */
+  hi2c3.Instance = I2C3;
+  hi2c3.Init.Timing = 0x0060112F;
+  hi2c3.Init.OwnAddress1 = 0;
+  hi2c3.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c3.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c3.Init.OwnAddress2 = 0;
+  hi2c3.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c3.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c3.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c3, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c3, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C3_Init 2 */
+
+  /* USER CODE END I2C3_Init 2 */
 
 }
 
@@ -500,11 +668,21 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(OLED_RST_GPIO_Port, OLED_RST_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pin : PA6 */
   GPIO_InitStruct.Pin = GPIO_PIN_6;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : OLED_RST_Pin */
+  GPIO_InitStruct.Pin = OLED_RST_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(OLED_RST_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PB3 */
   GPIO_InitStruct.Pin = GPIO_PIN_3;
